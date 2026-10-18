@@ -1,0 +1,15 @@
+{
+  // Editor-only config: graders live outside app/ so agents can't see them, and are
+  // copied into the workspace at grading time. This maps imports to app/ for type checking.
+  "extends": "../app/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../app/*"],
+      "vitest": ["../app/node_modules/vitest"],
+      "next/*": ["../app/node_modules/next/*"]
+    },
+    "typeRoots": ["../app/node_modules/@types"],
+    "incremental": false
+  },
+  "include": ["*.ts"]
+}

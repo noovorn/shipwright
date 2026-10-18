@@ -1,0 +1,2 @@
+# Keep LF everywhere: bash scripts and reference patches break with CRLF on Windows checkouts.
+* text=auto eol=lf

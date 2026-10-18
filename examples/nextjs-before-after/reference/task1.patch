@@ -1,0 +1,77 @@
+diff --git a/lib/csv.ts b/lib/csv.ts
+index b4a9ac2..99c5b88 100644
+--- a/lib/csv.ts
++++ b/lib/csv.ts
+@@ -1,3 +1,4 @@
++import { parseAmount } from "@/lib/money";
+ import type { Invoice } from "@/lib/store";
+ 
+ /**
+@@ -8,8 +9,12 @@ export function importCsv(text: string, ownerId: string): Invoice[] {
+   const [, ...lines] = text.trim().split(/\r?\n/);
+   return lines.map((line, i) => {
+     const [customer, rawAmount, dueDate] = splitCsvLine(line);
+-    const amount = Number.parseFloat(rawAmount.replace(/^\$/, ""));
+-    if (Number.isNaN(amount)) throw new Error(`Row ${i + 2}: invalid amount "${rawAmount}"`);
++    let amount: number;
++    try {
++      amount = parseAmount(rawAmount);
++    } catch {
++      throw new Error(`Row ${i + 2}: invalid amount "${rawAmount}"`);
++    }
+     return {
+       id: `inv_import_${Date.now()}_${i}`,
+       ownerId,
+diff --git a/lib/money.test.ts b/lib/money.test.ts
+new file mode 100644
+index 0000000..046e652
+--- /dev/null
++++ b/lib/money.test.ts
+@@ -0,0 +1,18 @@
++import { describe, expect, it } from "vitest";
++import { parseAmount } from "@/lib/money";
++
++describe("parseAmount", () => {
++  it("parses plain and dollar-prefixed amounts", () => {
++    expect(parseAmount("450.00")).toBe(450);
++    expect(parseAmount("$980.50")).toBe(980.5);
++  });
++
++  it("parses thousands separators", () => {
++    expect(parseAmount("2,300.00")).toBe(2300);
++    expect(parseAmount("1,250,000.00")).toBe(1_250_000);
++  });
++
++  it("rejects non-numeric input instead of returning a partial number", () => {
++    expect(() => parseAmount("12abc")).toThrow(/Invalid amount/);
++  });
++});
+diff --git a/lib/money.ts b/lib/money.ts
+index d6da19e..9a0e887 100644
+--- a/lib/money.ts
++++ b/lib/money.ts
+@@ -1,6 +1,8 @@
+ /** Parse a user-entered amount like "450.00" or "$1,250.00" into a number. */
+ export function parseAmount(input: string): number {
+-  return parseFloat(input.trim().replace(/^\$/, ""));
++  const value = Number(input.trim().replace(/^\$/, "").replaceAll(",", ""));
++  if (!Number.isFinite(value)) throw new Error(`Invalid amount: "${input}"`);
++  return value;
+ }
+ 
+ export function formatMoney(value: number): string {
+diff --git a/lib/stats.test.ts b/lib/stats.test.ts
+index e19c827..129d232 100644
+--- a/lib/stats.test.ts
++++ b/lib/stats.test.ts
+@@ -19,6 +19,10 @@ describe("totalOutstanding", () => {
+   it("ignores paid invoices", () => {
+     expect(totalOutstanding([inv("100.00"), inv("999.00", "paid")])).toBe(100);
+   });
++
++  it("sums amounts with thousands separators", () => {
++    expect(totalOutstanding([inv("450.00"), inv("2,300.00"), inv("1,250,000.00")])).toBe(1_252_750);
++  });
+ });
+ 
+ describe("countByStatus", () => {

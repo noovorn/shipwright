@@ -19,3 +19,17 @@ jobs:
           HOME="$RUNNER_TEMP/home" ./install.sh
           test -f "$RUNNER_TEMP/home/.claude/skills/systematic-debugging/SKILL.md"
           test -f "$RUNNER_TEMP/home/.codex/skills/code-review/SKILL.md"
+  demo-graders:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/nextjs-before-after
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Shellcheck demo scripts
+        run: shellcheck -x run.sh selftest.sh lib.sh
+      - name: Graders fail the buggy app and pass the reference fixes
+        run: ./selftest.sh

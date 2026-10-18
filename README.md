@@ -5,7 +5,7 @@
 **Senior-engineer discipline for AI coding agents.**
 Fourteen battle-tested skills that make Claude Code and Codex debug with evidence, write tests first, review like a staff engineer — and never say "done" without proof.
 
-[![validate](https://github.com/OWNER/shipwright/actions/workflows/validate.yml/badge.svg)](https://github.com/OWNER/shipwright/actions/workflows/validate.yml)
+[![validate](https://github.com/noovorn/shipwright/actions/workflows/validate.yml/badge.svg)](https://github.com/noovorn/shipwright/actions/workflows/validate.yml)
 ![skills](https://img.shields.io/badge/skills-14-blue)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-ready-d97757)
 ![Codex](https://img.shields.io/badge/Codex-ready-10a37f)
@@ -29,7 +29,7 @@ AI agents are fast, but left alone they:
 Shipwright installs skills — small, focused playbooks the agent loads **automatically** when the situation calls for it. No prompting required.
 
 ```bash
-git clone https://github.com/OWNER/shipwright && cd shipwright && ./install.sh
+git clone https://github.com/noovorn/shipwright && cd shipwright && ./install.sh
 ```
 
 That's it. Restart your agent.
@@ -50,6 +50,12 @@ That's it. Restart your agent.
 
 </td></tr>
 </table>
+
+**Don't take our word for it.** [`examples/nextjs-before-after`](examples/nextjs-before-after/) runs your own agent on a buggy Next.js app twice, with and without Shipwright, and scores both with hidden tests: root-cause fixes, auth checks, tests written, and builds that actually ran.
+
+```bash
+cd examples/nextjs-before-after && ./run.sh --runs 3
+```
 
 ## Skills
 

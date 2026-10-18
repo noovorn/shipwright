@@ -1,0 +1,1 @@
+Add a "Mark as paid" button to the invoice page. Back it with a server action `markInvoicePaid(formData: FormData)` exported from `app/invoices/actions.ts`; the form sends the invoice id in a field named `id`.

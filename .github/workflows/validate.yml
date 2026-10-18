@@ -1,0 +1,21 @@
+name: validate
+on:
+  push:
+  pull_request:
+jobs:
+  skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate SKILL.md files
+        run: python scripts/validate.py
+      - name: Shellcheck installer
+        run: shellcheck install.sh
+      - name: Smoke-test installer
+        run: |
+          HOME="$RUNNER_TEMP/home" ./install.sh
+          test -f "$RUNNER_TEMP/home/.claude/skills/systematic-debugging/SKILL.md"
+          test -f "$RUNNER_TEMP/home/.codex/skills/code-review/SKILL.md"

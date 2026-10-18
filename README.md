@@ -57,6 +57,8 @@ That's it. Restart your agent.
 cd examples/nextjs-before-after && ./run.sh --runs 3
 ```
 
+First results ([RESULTS.md](examples/nextjs-before-after/RESULTS.md)): on Opus 5.5 both variants got every correctness check right, while Shipwright runs wrote tests more often (2/3 vs 0/3). The bigger finding: the agent loaded a Shipwright skill in only 2 of 6 runs, so better trigger descriptions are the next priority.
+
 ## Skills
 
 | Skill | Triggers when… | What it enforces |

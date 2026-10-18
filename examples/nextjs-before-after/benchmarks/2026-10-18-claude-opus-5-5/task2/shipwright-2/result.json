@@ -1,0 +1,43 @@
+{
+  "task": 2,
+  "title": "Mark invoice as paid (feature)",
+  "variant": "shipwright",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 2,
+  "buildExit": 0,
+  "checks": {
+    "works": true,
+    "authn": true,
+    "authz": true,
+    "revalidate": true,
+    "sibling": false
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": true,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.29276510000000006,
+    "turns": 10,
+    "durationMs": 71693
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "app/invoices/[id]/page.tsx",
+    "app/invoices/actions.test.ts",
+    "app/invoices/actions.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files | grep -v '^\\.claude/' ; cat package.json; ls app/invoices -R 2>/dev/null",
+    "cd \"<workspace>\" && for f in app/invoices/actions.ts \"app/invoices/[id]/page.tsx\" lib/store.ts lib/session.ts app/login/route.ts app/page.tsx; do echo \"=== $f\"; cat \"$f\"; done; head -c 600 data/invoices.json; ls .claude; ls node_modules | head -3",
+    "cd \"<workspace>\" && cat vitest.config.ts lib/stats.test.ts | head -40",
+    "cd \"<workspace>\" && npx vitest run app/invoices 2>&1 | tail -15",
+    "cd \"<workspace>\" && npx vitest run 2>&1 | tail -6; npx tsc --noEmit && echo TYPECHECK OK; npx next build 2>&1 | tail -15"
+  ],
+  "finalMessage": "The invoice page now has a \"Mark as paid\" button, backed by `markInvoicePaid(formData)` in `app/invoices/actions.ts`. All 7 tests pass (4 of them new), and the typecheck and `next build` both succeed. I didn't open the page in a running app, so the button has been tested through the action but not clicked in a browser.\n\n**What changed:**\n- **The action** (`app/invoices/actions.ts`): it reads `id` from the form and sets that invoice's status to `paid`. It then refreshes both `/` and `/invoices/[id]`, so the dashboard totals and the invoice page show the change.\n- **Ownership check:** anyone can call a server action directly with a POST request, so the action doesn't trust the form. It looks up the signed-in user and returns not found unless they own the invoice. It also returns not found if nobody is signed in or the id is missing or doesn't exist.\n- **The button** (`app/invoices/[id]/page.tsx`): it's a form with a hidden `id` field, next to the delete form, and it only shows while the invoice is still `open`.\n- **Tests** (`app/invoices/actions.test.ts`): they cover the owner marking their invoice paid, another user being refused, a signed-out request being refused, and an unknown or missing id. I ran them before writing the action and they failed as expected.\n\n**A security issue I didn't fix:** the existing `deleteInvoice` action has no ownership check. Any signed-in or signed-out caller who knows or guesses an invoice id can delete someone else's invoice. It needs the same check as `markInvoicePaid` — I can add it if you want.\n\nI haven't committed anything."
+}

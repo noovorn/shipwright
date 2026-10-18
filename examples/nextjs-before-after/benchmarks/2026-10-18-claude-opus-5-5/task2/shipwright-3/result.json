@@ -1,0 +1,44 @@
+{
+  "task": 2,
+  "title": "Mark invoice as paid (feature)",
+  "variant": "shipwright",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 3,
+  "buildExit": 0,
+  "checks": {
+    "works": true,
+    "authn": true,
+    "authz": true,
+    "revalidate": true,
+    "sibling": false
+  },
+  "process": {
+    "skillLoaded": true,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": false,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.27365619999999996,
+    "turns": 8,
+    "durationMs": 60021
+  },
+  "skillsUsed": [
+    "nextjs-app-router"
+  ],
+  "filesChanged": [
+    "app/invoices/[id]/page.tsx",
+    "app/invoices/actions.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files | grep -v \"^\\.claude/skills\" | head -100 && cat package.json && ls app/invoices -R",
+    "cd \"<workspace>\" && for f in \"app/invoices/[id]/page.tsx\" app/invoices/actions.ts lib/session.ts lib/store.ts app/login/route.ts app/page.tsx next.config.ts; do echo \"=== $f\"; cat \"$f\"; done; head -c 600 data/invoices.json",
+    "cd \"<workspace>\" && cat > app/invoices/actions.ts <<'EOF'\n\"use server\";\n\nimport { revalidatePath } from \"next/cache\";\nimport { redirect } from \"next/navigation\";\nimport { getCurrentUserId } from \"@/lib/session\";\nimport { getInvoice, removeInvoice, updateInvoice } from \"@/lib/store\";\n\nexport async function deleteInvoice(formData: FormData) {\n  const id = formData.get(\"id\") as string;\n  removeInvoice(id);\n  redirect(\"/\");\n}\n\nexport async function markInvoicePaid(formData: FormData) {\n  const id = formData.get(\"id\");\n  if (typeof id !== \"string\") throw new Error(\"Missing invoice id\");\n\n  // Server actions are public endpoints: re-check that the caller owns this invoice.\n  const userId = await getCurrentUserId();\n  const invoice = getInvoice(id);\n  if (!userId || !invoice || invoice.ownerId !== userId) throw new Error(\"Invoice not found\");\n\n  updateInvoice(id, { status: \"paid\" });\n  revalidatePath(`/invoices/${id}`);\n  revalidatePath(\"/\");\n}\nEOF\npython - <<'EOF'\np=\"app/invoices/[id]/page.tsx\"\ns=open(p).read()\ns=s.replace('import { deleteInvoice } from','import { deleteInvoice, markInvoicePaid } from')\ns=s.replace('''      <form action={deleteInvoice}>''','''      {invoice.status === \"open\" && (\n        <form action={markInvoicePaid}>\n          <input type=\"hidden\" name=\"id\" value={invoice.id} />\n          <button type=\"submit\">Mark as paid</button>\n        </form>\n      )}\n      <form action={deleteInvoice}>''')\nopen(p,\"w\").write(s)\nEOF\ngit diff --stat && npm run typecheck 2>&1 | tail -5 && npm test 2>&1 | tail -6",
+    "cd \"<workspace>\" && git show HEAD:\"app/invoices/[id]/page.tsx\" | file - ; file \"app/invoices/[id]/page.tsx\" app/invoices/actions.ts; git show HEAD:app/invoices/actions.ts | file -",
+    "cd \"<workspace>\" && sed -i 's/\\r$//' \"app/invoices/[id]/page.tsx\" && git diff && npm run typecheck 2>&1 | tail -2 && npx next build 2>&1 | tail -15"
+  ],
+  "finalMessage": "The invoice page now has a \"Mark as paid\" button, backed by `markInvoicePaid(formData)` in `app/invoices/actions.ts`. Typecheck, the existing tests (3/3) and `next build` all pass, but I haven't clicked the button in a running app.\n\n**What I changed:**\n- **`app/invoices/actions.ts`:** `markInvoicePaid` reads `id` from the form, checks it is a string, and checks the signed-in user owns that invoice. Then it sets the status to `paid` and refreshes both the invoice page and the dashboard so the new status and totals show straight away.\n- **`app/invoices/[id]/page.tsx`:** the new form sends a hidden `id` field, matching the delete form. The button only appears while the invoice is `open`.\n\n**Security issue in existing code:** `deleteInvoice` doesn't check who is signed in or who owns the invoice. Server actions can be called directly, so anyone, even someone not logged in, could delete any user's invoice by sending its id. I left it alone because it's outside this task. The fix is the same ownership check `markInvoicePaid` now does. Want me to add it?"
+}

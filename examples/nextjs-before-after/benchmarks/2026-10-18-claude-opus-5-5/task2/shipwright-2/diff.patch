@@ -1,0 +1,112 @@
+diff --git a/app/invoices/[id]/page.tsx b/app/invoices/[id]/page.tsx
+index 184c756..12546a6 100644
+--- a/app/invoices/[id]/page.tsx
++++ b/app/invoices/[id]/page.tsx
+@@ -1,5 +1,5 @@
+ import { notFound } from "next/navigation";
+-import { deleteInvoice } from "@/app/invoices/actions";
++import { deleteInvoice, markInvoicePaid } from "@/app/invoices/actions";
+ import { getCurrentUserId } from "@/lib/session";
+ import { getInvoice } from "@/lib/store";
+ 
+@@ -20,6 +20,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
+         <dt>Due</dt>
+         <dd>{invoice.dueDate}</dd>
+       </dl>
++      {invoice.status === "open" && (
++        <form action={markInvoicePaid}>
++          <input type="hidden" name="id" value={invoice.id} />
++          <button type="submit">Mark as paid</button>
++        </form>
++      )}
+       <form action={deleteInvoice}>
+         <input type="hidden" name="id" value={invoice.id} />
+         <button type="submit">Delete invoice</button>
+diff --git a/app/invoices/actions.test.ts b/app/invoices/actions.test.ts
+new file mode 100644
+index 0000000..1b69ebb
+--- /dev/null
++++ b/app/invoices/actions.test.ts
+@@ -0,0 +1,51 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { getInvoice, resetStore } from "@/lib/store";
++
++const session = vi.hoisted(() => ({ userId: null as string | null }));
++
++vi.mock("@/lib/session", () => ({ getCurrentUserId: async () => session.userId }));
++vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
++vi.mock("next/navigation", () => ({
++  redirect: vi.fn(),
++  notFound: () => {
++    throw new Error("NEXT_NOT_FOUND");
++  },
++}));
++
++const { markInvoicePaid } = await import("@/app/invoices/actions");
++
++const form = (id: string) => {
++  const fd = new FormData();
++  fd.set("id", id);
++  return fd;
++};
++
++describe("markInvoicePaid", () => {
++  beforeEach(() => {
++    resetStore();
++    session.userId = null;
++  });
++
++  it("marks the owner's invoice as paid", async () => {
++    session.userId = "alice";
++    await markInvoicePaid(form("inv_1001"));
++    expect(getInvoice("inv_1001")?.status).toBe("paid");
++  });
++
++  it("rejects another user's invoice", async () => {
++    session.userId = "bob";
++    await expect(markInvoicePaid(form("inv_1001"))).rejects.toThrow("NEXT_NOT_FOUND");
++    expect(getInvoice("inv_1001")?.status).toBe("open");
++  });
++
++  it("rejects signed-out requests", async () => {
++    await expect(markInvoicePaid(form("inv_1001"))).rejects.toThrow("NEXT_NOT_FOUND");
++    expect(getInvoice("inv_1001")?.status).toBe("open");
++  });
++
++  it("rejects unknown or missing ids", async () => {
++    session.userId = "alice";
++    await expect(markInvoicePaid(form("inv_nope"))).rejects.toThrow("NEXT_NOT_FOUND");
++    await expect(markInvoicePaid(new FormData())).rejects.toThrow("NEXT_NOT_FOUND");
++  });
++});
+diff --git a/app/invoices/actions.ts b/app/invoices/actions.ts
+index f6a9bca..304858b 100644
+--- a/app/invoices/actions.ts
++++ b/app/invoices/actions.ts
+@@ -1,10 +1,24 @@
+ "use server";
+ 
+-import { redirect } from "next/navigation";
+-import { removeInvoice } from "@/lib/store";
++import { revalidatePath } from "next/cache";
++import { notFound, redirect } from "next/navigation";
++import { getCurrentUserId } from "@/lib/session";
++import { getInvoice, removeInvoice, updateInvoice } from "@/lib/store";
+ 
+ export async function deleteInvoice(formData: FormData) {
+   const id = formData.get("id") as string;
+   removeInvoice(id);
+   redirect("/");
+ }
++
++export async function markInvoicePaid(formData: FormData) {
++  // Server actions are public POST endpoints: re-check ownership, don't trust the form.
++  const id = formData.get("id");
++  const userId = await getCurrentUserId();
++  const invoice = typeof id === "string" ? getInvoice(id) : undefined;
++  if (!userId || !invoice || invoice.ownerId !== userId) notFound();
++
++  updateInvoice(invoice.id, { status: "paid" });
++  revalidatePath("/");
++  revalidatePath(`/invoices/${invoice.id}`);
++}

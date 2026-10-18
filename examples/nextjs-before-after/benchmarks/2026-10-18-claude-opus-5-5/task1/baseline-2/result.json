@@ -1,0 +1,44 @@
+{
+  "task": 1,
+  "title": "Wrong dashboard total (bug fix)",
+  "variant": "baseline",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 2,
+  "buildExit": 0,
+  "checks": {
+    "fixed": true,
+    "root-cause": true,
+    "sibling": true
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": true,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.2988913000000001,
+    "turns": 7,
+    "durationMs": 62302
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "lib/csv.test.ts",
+    "lib/csv.ts",
+    "lib/money.test.ts",
+    "lib/money.ts",
+    "lib/stats.test.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files && grep -rn -i \"outstanding\" --exclude-dir=node_modules --exclude-dir=.git . | head -50",
+    "cd \"<workspace>\" && cat lib/stats.ts lib/money.ts lib/stats.test.ts app/page.tsx lib/store.ts; head -c 1500 data/invoices.json; grep -o '\"amount\": *\"[^\"]*\"' data/invoices.json | sort | uniq -c | sort -rn | head; grep -o '\"amount\": *[^,]*' data/invoices.json | head -20",
+    "cd \"<workspace>\" && grep -rn \"parseAmount\\|amount\" app lib --include=*.ts --include=*.tsx | grep -v \"^lib/stats.test\"; cat lib/csv.ts app/invoices/actions.ts",
+    "cd \"<workspace>\" && python - <<'EOF'\nimport re\np='lib/money.ts'; s=open(p).read()\ns=s.replace('return parseFloat(input.trim().replace(/^\\\\$/, \"\"));','return parseFloat(input.trim().replace(/^\\\\$/, \"\").replace(/,/g, \"\"));')\nopen(p,'w').write(s)\np='lib/csv.ts'; s=open(p).read()\ns=s.replace('import type { Invoice } from \"@/lib/store\";','import { parseAmount } from \"@/lib/money\";\\nimport type { Invoice } from \"@/lib/store\";')\ns=s.replace('Number.parseFloat(rawAmount.replace(/^\\\\$/, \"\"))','parseAmount(rawAmount)')\nopen(p,'w').write(s)\np='lib/stats.test.ts'; s=open(p).read()\ns=s.replace('''  it(\"ignores paid invoices\", () => {''','''  it(\"handles thousands separators\", () => {\n    expect(totalOutstanding([inv(\"450.00\"), inv(\"2,300.00\"), inv(\"1,250,000.00\")])).toBe(1252750);\n  });\n\n  it(\"ignores paid invoices\", () => {''')\nopen(p,'w').write(s)\nEOF\ncat > lib/money.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { parseAmount } from \"@/lib/money\";\n\ndescribe(\"parseAmount\", () => {\n  it(\"parses plain, dollar-prefixed and comma-separated amounts\", () => {\n    expect(parseAmount(\"450.00\")).toBe(450);\n    expect(parseAmount(\"$1,250.00\")).toBe(1250);\n    expect(parseAmount(\" 1,250,000.00 \")).toBe(1250000);\n  });\n});\nEOF\ncat > lib/csv.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { importCsv } from \"@/lib/csv\";\n\ndescribe(\"importCsv\", () => {\n  it(\"keeps the full value of quoted amounts with thousands separators\", () => {\n    const [row] = importCsv('customer,amount,dueDate\\nAcme,\"1,200.00\",2026-12-01', \"alice\");\n    expect(row.amount).toBe(\"1200.00\");\n  });\n});\nEOF\ngit diff; npx vitest run 2>&1 | tail -15",
+    "cd \"<workspace>\" && git show HEAD:lib/money.ts | file - ; for f in lib/money.ts lib/csv.ts lib/stats.test.ts lib/money.test.ts lib/csv.test.ts; do sed -i 's/\\r$//; s/$/\\r/' $f; done; git diff --stat; npx vitest run 2>&1 | grep -E \"Tests|Files\"; npx tsc --noEmit && echo TSC OK",
+    "cd \"<workspace>\" && for f in lib/money.ts lib/csv.ts lib/stats.test.ts lib/money.test.ts lib/csv.test.ts; do sed -i 's/\\r$//' $f; done; git diff --stat; npx vitest run 2>&1 | grep -E \"Tests |Files \""
+  ],
+  "finalMessage": "I fixed it. Alice's Outstanding total now comes out to **$1,252,750.00**, which is her three open invoices: $450 + $2,300 + $1,250,000.\n\n**Cause:** amounts are stored with thousands separators, like `\"1,250,000.00\"`. `parseAmount` in `lib/money.ts` passed them to `parseFloat`, which stops reading at the first comma. So `\"2,300.00\"` counted as 2 and `\"1,250,000.00\"` as 1, giving 450 + 2 + 1 = $453.\n\n**Changes:**\n- **`lib/money.ts`:** `parseAmount` now removes commas before parsing.\n- **`lib/csv.ts`:** the CSV importer had its own copy of the same broken parsing. Its own doc comment's example, `\"1,200.00\"`, would have been saved as `\"1.00\"`, a wrong stored value rather than just a wrong total. It now calls `parseAmount`.\n- **Tests:** I added a thousands-separator case to `lib/stats.test.ts`, plus two new test files, `lib/money.test.ts` and `lib/csv.test.ts`. All 6 tests pass and `tsc --noEmit` is clean. I didn't open the dashboard in a browser; the new total comes from the tests.\n\nAny invoices already imported from a CSV with comma-formatted amounts were probably saved with the wrong amount. This fix won't correct those, so they're worth checking if the importer has been used in a real deployment. In this demo the data lives in memory and resets from the seed file, so nothing here needs repair.\n\nThe changes aren't committed."
+}

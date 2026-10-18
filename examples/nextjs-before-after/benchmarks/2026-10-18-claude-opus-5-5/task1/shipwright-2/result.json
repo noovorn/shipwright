@@ -1,0 +1,44 @@
+{
+  "task": 1,
+  "title": "Wrong dashboard total (bug fix)",
+  "variant": "shipwright",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 2,
+  "buildExit": 0,
+  "checks": {
+    "fixed": true,
+    "root-cause": true,
+    "sibling": true
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": true,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.3062687,
+    "turns": 9,
+    "durationMs": 76097
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "lib/csv.test.ts",
+    "lib/csv.ts",
+    "lib/money.test.ts",
+    "lib/money.ts",
+    "lib/stats.test.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files | grep -v \"^.claude/\" | head -50 && cat CLAUDE.md 2>/dev/null; grep -rni \"outstanding\" --exclude-dir=node_modules --exclude-dir=.git . | grep -v \"^./.claude\" | head -30",
+    "cd \"<workspace>\" && cat lib/stats.ts lib/stats.test.ts lib/money.ts app/page.tsx lib/store.ts package.json; head -c 1500 data/invoices.json; grep -o '\"amount\": *\"[^\"]*\"' data/invoices.json | sort | uniq -c | sort -rn | head -20",
+    "cd \"<workspace>\" && grep -rn \"parseAmount\\|parseFloat\" app lib; cat lib/csv.ts app/invoices/actions.ts",
+    "cd \"<workspace>\" && cat > lib/money.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { parseAmount } from \"@/lib/money\";\n\ndescribe(\"parseAmount\", () => {\n  it(\"parses plain amounts\", () => {\n    expect(parseAmount(\"450.00\")).toBe(450);\n  });\n\n  it(\"parses thousands separators\", () => {\n    expect(parseAmount(\"2,300.00\")).toBe(2300);\n    expect(parseAmount(\"1,250,000.00\")).toBe(1250000);\n  });\n\n  it(\"strips a leading dollar sign and whitespace\", () => {\n    expect(parseAmount(\" $1,250.00 \")).toBe(1250);\n  });\n\n  it(\"returns NaN for non-numeric input\", () => {\n    expect(parseAmount(\"abc\")).toBeNaN();\n    expect(parseAmount(\"\")).toBeNaN();\n    expect(parseAmount(\"12abc\")).toBeNaN();\n  });\n});\nEOF\ncat > lib/csv.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { importCsv } from \"@/lib/csv\";\n\ndescribe(\"importCsv\", () => {\n  it(\"keeps the full value of amounts with thousands separators\", () => {\n    const [row] = importCsv('customer,amount,dueDate\\nAcme,\"1,200.00\",2026-12-01', \"alice\");\n    expect(row.amount).toBe(\"1200.00\");\n  });\n\n  it(\"rejects invalid amounts\", () => {\n    expect(() => importCsv(\"customer,amount,dueDate\\nAcme,abc,2026-12-01\", \"alice\")).toThrow(/Row 2/);\n  });\n});\nEOF\ncat >> lib/stats.test.ts <<'EOF'\n\ndescribe(\"totalOutstanding with formatted amounts\", () => {\n  it(\"sums amounts that use thousands separators\", () => {\n    expect(totalOutstanding([inv(\"450.00\"), inv(\"2,300.00\"), inv(\"1,250,000.00\")])).toBe(1252750);\n  });\n});\nEOF\nnpx vitest run 2>&1 | tail -25",
+    "cd \"<workspace>\" && cat > lib/money.ts <<'EOF'\n/** Parse a user-entered amount like \"450.00\" or \"$1,250.00\" into a number (NaN if invalid). */\nexport function parseAmount(input: string): number {\n  const normalized = input.trim().replace(/^\\$/, \"\").replace(/,/g, \"\");\n  if (!/^-?\\d+(\\.\\d+)?$/.test(normalized)) return NaN;\n  return Number(normalized);\n}\n\nexport function formatMoney(value: number): string {\n  return value.toLocaleString(\"en-US\", { style: \"currency\", currency: \"USD\" });\n}\nEOF\nsed -i 's|^import type { Invoice } from \"@/lib/store\";|import { parseAmount } from \"@/lib/money\";\\nimport type { Invoice } from \"@/lib/store\";|; s|const amount = Number.parseFloat(rawAmount.replace(/^\\\\$/, \"\"));|const amount = parseAmount(rawAmount);|' lib/csv.ts\ngit diff lib/csv.ts; npx vitest run 2>&1 | tail -6; npx tsc --noEmit && echo TSC OK",
+    "cd \"<workspace>\" && npx vitest run 2>&1 | tail -6; npx tsc --noEmit && echo TSC OK; npx tsx -e 'import {listInvoices} from \"./lib/store\"; import {totalOutstanding} from \"./lib/stats\"; import {formatMoney} from \"./lib/money\"; console.log(\"alice\", formatMoney(totalOutstanding(listInvoices(\"alice\"))), \"bob\", formatMoney(totalOutstanding(listInvoices(\"bob\"))))' 2>&1 | tail -3"
+  ],
+  "finalMessage": "I fixed it. With alice's seed data the dashboard now shows **$1,252,750.00** instead of $453.00, and bob's shows $7,920.25. All 10 tests pass, including the new ones, and the type check is clean.\n\n**Cause:** `parseAmount` in `lib/money.ts` used `parseFloat`, which stops reading at the first comma. Amounts are stored the way they were entered, with thousands separators:\n- `\"450.00\"` → 450\n- `\"2,300.00\"` → **2**\n- `\"1,250,000.00\"` → **1**\n\nThat adds up to exactly $453.00.\n\n**Changes:**\n- **`lib/money.ts`:** `parseAmount` now removes commas along with the leading `$` and surrounding spaces. It also rejects anything that isn't a valid number and returns `NaN`, where before it silently took a partial number (e.g. 12 from `\"12abc\"`).\n- **`lib/csv.ts`:** the CSV importer had its own copy of the same bug, so `\"1,200.00\"` would have been saved as `1.00`, which permanently corrupts the stored amount. It now uses `parseAmount`.\n- **Tests:** I added `lib/money.test.ts`, `lib/csv.test.ts` and a check in `lib/stats.test.ts` for amounts with commas. They failed before the fix (showing 453) and pass now.\n\nAny invoices already imported from CSV with commas in the amount were saved with the wrong value, and this fix doesn't correct them. The demo only uses an in-memory store loaded from seed data, so there's nothing to clean up here, but the same logic in production would need a data fix. I haven't committed anything; tell me if you want a commit or PR."
+}

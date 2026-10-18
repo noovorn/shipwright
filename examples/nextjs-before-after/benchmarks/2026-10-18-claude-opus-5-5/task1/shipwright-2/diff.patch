@@ -1,0 +1,95 @@
+diff --git a/lib/csv.test.ts b/lib/csv.test.ts
+new file mode 100644
+index 0000000..c3268a7
+--- /dev/null
++++ b/lib/csv.test.ts
+@@ -0,0 +1,13 @@
++import { describe, expect, it } from "vitest";
++import { importCsv } from "@/lib/csv";
++
++describe("importCsv", () => {
++  it("keeps the full value of amounts with thousands separators", () => {
++    const [row] = importCsv('customer,amount,dueDate\nAcme,"1,200.00",2026-12-01', "alice");
++    expect(row.amount).toBe("1200.00");
++  });
++
++  it("rejects invalid amounts", () => {
++    expect(() => importCsv("customer,amount,dueDate\nAcme,abc,2026-12-01", "alice")).toThrow(/Row 2/);
++  });
++});
+diff --git a/lib/csv.ts b/lib/csv.ts
+index b4a9ac2..fd94cab 100644
+--- a/lib/csv.ts
++++ b/lib/csv.ts
+@@ -1,3 +1,4 @@
++import { parseAmount } from "@/lib/money";
+ import type { Invoice } from "@/lib/store";
+ 
+ /**
+@@ -8,7 +9,7 @@ export function importCsv(text: string, ownerId: string): Invoice[] {
+   const [, ...lines] = text.trim().split(/\r?\n/);
+   return lines.map((line, i) => {
+     const [customer, rawAmount, dueDate] = splitCsvLine(line);
+-    const amount = Number.parseFloat(rawAmount.replace(/^\$/, ""));
++    const amount = parseAmount(rawAmount);
+     if (Number.isNaN(amount)) throw new Error(`Row ${i + 2}: invalid amount "${rawAmount}"`);
+     return {
+       id: `inv_import_${Date.now()}_${i}`,
+diff --git a/lib/money.test.ts b/lib/money.test.ts
+new file mode 100644
+index 0000000..828741b
+--- /dev/null
++++ b/lib/money.test.ts
+@@ -0,0 +1,23 @@
++import { describe, expect, it } from "vitest";
++import { parseAmount } from "@/lib/money";
++
++describe("parseAmount", () => {
++  it("parses plain amounts", () => {
++    expect(parseAmount("450.00")).toBe(450);
++  });
++
++  it("parses thousands separators", () => {
++    expect(parseAmount("2,300.00")).toBe(2300);
++    expect(parseAmount("1,250,000.00")).toBe(1250000);
++  });
++
++  it("strips a leading dollar sign and whitespace", () => {
++    expect(parseAmount(" $1,250.00 ")).toBe(1250);
++  });
++
++  it("returns NaN for non-numeric input", () => {
++    expect(parseAmount("abc")).toBeNaN();
++    expect(parseAmount("")).toBeNaN();
++    expect(parseAmount("12abc")).toBeNaN();
++  });
++});
+diff --git a/lib/money.ts b/lib/money.ts
+index d6da19e..a1d33ca 100644
+--- a/lib/money.ts
++++ b/lib/money.ts
+@@ -1,6 +1,8 @@
+-/** Parse a user-entered amount like "450.00" or "$1,250.00" into a number. */
++/** Parse a user-entered amount like "450.00" or "$1,250.00" into a number (NaN if invalid). */
+ export function parseAmount(input: string): number {
+-  return parseFloat(input.trim().replace(/^\$/, ""));
++  const normalized = input.trim().replace(/^\$/, "").replace(/,/g, "");
++  if (!/^-?\d+(\.\d+)?$/.test(normalized)) return NaN;
++  return Number(normalized);
+ }
+ 
+ export function formatMoney(value: number): string {
+diff --git a/lib/stats.test.ts b/lib/stats.test.ts
+index e19c827..7605308 100644
+--- a/lib/stats.test.ts
++++ b/lib/stats.test.ts
+@@ -26,3 +26,9 @@ describe("countByStatus", () => {
+     expect(countByStatus([inv("1"), inv("2", "paid"), inv("3")])).toEqual({ open: 2, paid: 1 });
+   });
+ });
++
++describe("totalOutstanding with formatted amounts", () => {
++  it("sums amounts that use thousands separators", () => {
++    expect(totalOutstanding([inv("450.00"), inv("2,300.00"), inv("1,250,000.00")])).toBe(1252750);
++  });
++});

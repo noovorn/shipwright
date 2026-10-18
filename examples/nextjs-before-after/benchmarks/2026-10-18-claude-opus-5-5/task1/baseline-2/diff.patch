@@ -1,0 +1,76 @@
+diff --git a/lib/csv.test.ts b/lib/csv.test.ts
+new file mode 100644
+index 0000000..0bb8c9f
+--- /dev/null
++++ b/lib/csv.test.ts
+@@ -0,0 +1,9 @@
++import { describe, expect, it } from "vitest";
++import { importCsv } from "@/lib/csv";
++
++describe("importCsv", () => {
++  it("keeps the full value of quoted amounts with thousands separators", () => {
++    const [row] = importCsv('customer,amount,dueDate\nAcme,"1,200.00",2026-12-01', "alice");
++    expect(row.amount).toBe("1200.00");
++  });
++});
+diff --git a/lib/csv.ts b/lib/csv.ts
+index b4a9ac2..fd94cab 100644
+--- a/lib/csv.ts
++++ b/lib/csv.ts
+@@ -1,3 +1,4 @@
++import { parseAmount } from "@/lib/money";
+ import type { Invoice } from "@/lib/store";
+ 
+ /**
+@@ -8,7 +9,7 @@ export function importCsv(text: string, ownerId: string): Invoice[] {
+   const [, ...lines] = text.trim().split(/\r?\n/);
+   return lines.map((line, i) => {
+     const [customer, rawAmount, dueDate] = splitCsvLine(line);
+-    const amount = Number.parseFloat(rawAmount.replace(/^\$/, ""));
++    const amount = parseAmount(rawAmount);
+     if (Number.isNaN(amount)) throw new Error(`Row ${i + 2}: invalid amount "${rawAmount}"`);
+     return {
+       id: `inv_import_${Date.now()}_${i}`,
+diff --git a/lib/money.test.ts b/lib/money.test.ts
+new file mode 100644
+index 0000000..29971cc
+--- /dev/null
++++ b/lib/money.test.ts
+@@ -0,0 +1,10 @@
++import { describe, expect, it } from "vitest";
++import { parseAmount } from "@/lib/money";
++
++describe("parseAmount", () => {
++  it("parses plain, dollar-prefixed and comma-separated amounts", () => {
++    expect(parseAmount("450.00")).toBe(450);
++    expect(parseAmount("$1,250.00")).toBe(1250);
++    expect(parseAmount(" 1,250,000.00 ")).toBe(1250000);
++  });
++});
+diff --git a/lib/money.ts b/lib/money.ts
+index d6da19e..2070cda 100644
+--- a/lib/money.ts
++++ b/lib/money.ts
+@@ -1,6 +1,6 @@
+ /** Parse a user-entered amount like "450.00" or "$1,250.00" into a number. */
+ export function parseAmount(input: string): number {
+-  return parseFloat(input.trim().replace(/^\$/, ""));
++  return parseFloat(input.trim().replace(/^\$/, "").replace(/,/g, ""));
+ }
+ 
+ export function formatMoney(value: number): string {
+diff --git a/lib/stats.test.ts b/lib/stats.test.ts
+index e19c827..240d5f7 100644
+--- a/lib/stats.test.ts
++++ b/lib/stats.test.ts
+@@ -16,6 +16,10 @@ describe("totalOutstanding", () => {
+     expect(totalOutstanding([inv("100.00"), inv("250.50")])).toBe(350.5);
+   });
+ 
++  it("handles thousands separators", () => {
++    expect(totalOutstanding([inv("450.00"), inv("2,300.00"), inv("1,250,000.00")])).toBe(1252750);
++  });
++
+   it("ignores paid invoices", () => {
+     expect(totalOutstanding([inv("100.00"), inv("999.00", "paid")])).toBe(100);
+   });

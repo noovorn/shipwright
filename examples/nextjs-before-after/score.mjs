@@ -21,6 +21,7 @@ const CHECKS = {
 };
 
 const PROCESS = {
+  skillLoaded: "Agent loaded a Shipwright skill",
   ownTestsPass: "Project's own test suite passes",
   buildPasses: "`next build` passes",
   addedTests: "Added or updated tests",
@@ -28,11 +29,18 @@ const PROCESS = {
   ranBuild: "Agent ran build / typecheck itself",
 };
 
+const SHIPWRIGHT_SKILLS = new Set(
+  readdirSync(new URL("../../skills/", import.meta.url), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name),
+);
+
 const readJson = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null);
 const readLines = (p) => (existsSync(p) ? readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean) : []);
 
 function parseTranscript(path) {
   const commands = [];
+  const skillsUsed = [];
   let finalMessage = "";
   let usage = {};
   for (const line of readLines(path)) {
@@ -46,6 +54,11 @@ function parseTranscript(path) {
     if (ev.type === "assistant") {
       for (const c of ev.message?.content ?? []) {
         if (c.type === "tool_use" && c.name === "Bash" && c.input?.command) commands.push(c.input.command);
+        if (c.type === "tool_use" && c.name === "Skill" && c.input?.skill) skillsUsed.push(c.input.skill);
+        // Agents without a Skill tool (e.g. Codex) read SKILL.md files directly.
+        const file = c.type === "tool_use" ? (c.input?.file_path ?? c.input?.command ?? "") : "";
+        const m = /skills[\\/]([\w-]+)[\\/]SKILL\.md/.exec(file);
+        if (m) skillsUsed.push(m[1]);
       }
     }
     if (ev.type === "result") {
@@ -55,18 +68,22 @@ function parseTranscript(path) {
     // Codex: codex exec --json
     const item = ev.item;
     if (ev.type === "item.completed" && item) {
-      if (item.type === "command_execution" && item.command) commands.push(item.command);
+      if (item.type === "command_execution" && item.command) {
+        commands.push(item.command);
+        const m = /skills[\\/]([\w-]+)[\\/]SKILL\.md/.exec(item.command);
+        if (m) skillsUsed.push(m[1]);
+      }
       if (item.type === "agent_message" && item.text) finalMessage = item.text;
     }
   }
-  return { commands, finalMessage, usage };
+  return { commands, skillsUsed: [...new Set(skillsUsed)], finalMessage, usage };
 }
 
 function grade(runDir) {
   const meta = readJson(join(runDir, "meta.json"));
   const vitest = readJson(join(runDir, "grader.json"));
   const changed = readLines(join(runDir, "changed.txt"));
-  const { commands, finalMessage, usage } = parseTranscript(join(runDir, "transcript.jsonl"));
+  const { commands, skillsUsed, finalMessage, usage } = parseTranscript(join(runDir, "transcript.jsonl"));
 
   const tags = {};
   let ownTotal = 0;
@@ -86,6 +103,7 @@ function grade(runDir) {
 
   const checks = Object.fromEntries(Object.keys(CHECKS[meta.task]).map((k) => [k, tags[k] === true]));
   const process = {
+    skillLoaded: skillsUsed.some((s) => SHIPWRIGHT_SKILLS.has(s)),
     ownTestsPass: ownTotal > 0 && ownPassed === ownTotal,
     buildPasses: meta.buildExit === 0,
     addedTests: changed.some((f) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(f)),
@@ -93,7 +111,7 @@ function grade(runDir) {
     ranBuild: commands.some((c) => /next build|\b(npm|pnpm|yarn)( run)? (build|typecheck)\b|\btsc\b/.test(c)),
   };
 
-  const result = { ...meta, checks, process, usage, filesChanged: changed, commands, finalMessage };
+  const result = { ...meta, checks, process, usage, skillsUsed, filesChanged: changed, commands, finalMessage };
   writeFileSync(join(runDir, "result.json"), JSON.stringify(result, null, 2));
   return result;
 }

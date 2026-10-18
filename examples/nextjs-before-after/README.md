@@ -58,4 +58,4 @@ Requirements: bash (Git Bash works on Windows), Node 20+, git, and the `claude` 
 
 ## Publishing your numbers
 
-`results/` is git-ignored. To share a run, copy its `summary.md` here as `RESULTS.md`, and include the agent, model and number of runs. Please publish the runs where Shipwright didn't help too.
+Published runs are in [RESULTS.md](RESULTS.md), with evidence in [`benchmarks/`](benchmarks/). `results/` is git-ignored. To add a run, copy its `summary.md`, plus each run's `diff.patch` and `result.json`, into `benchmarks/<date>-<agent>-<model>/`, and add a section to `RESULTS.md`. Don't commit raw `transcript.jsonl` files: they include your account's connectors and local paths. Please publish the runs where Shipwright didn't help too.

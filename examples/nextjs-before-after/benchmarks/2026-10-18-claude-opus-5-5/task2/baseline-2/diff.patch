@@ -1,0 +1,56 @@
+diff --git a/app/invoices/[id]/page.tsx b/app/invoices/[id]/page.tsx
+index 184c756..b030a21 100644
+--- a/app/invoices/[id]/page.tsx
++++ b/app/invoices/[id]/page.tsx
+@@ -1,5 +1,5 @@
+ import { notFound } from "next/navigation";
+-import { deleteInvoice } from "@/app/invoices/actions";
++import { deleteInvoice, markInvoicePaid } from "@/app/invoices/actions";
+ import { getCurrentUserId } from "@/lib/session";
+ import { getInvoice } from "@/lib/store";
+ 
+@@ -20,6 +20,12 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
+         <dt>Due</dt>
+         <dd>{invoice.dueDate}</dd>
+       </dl>
++      {invoice.status !== "paid" && (
++        <form action={markInvoicePaid}>
++          <input type="hidden" name="id" value={invoice.id} />
++          <button type="submit">Mark as paid</button>
++        </form>
++      )}
+       <form action={deleteInvoice}>
+         <input type="hidden" name="id" value={invoice.id} />
+         <button type="submit">Delete invoice</button>
+diff --git a/app/invoices/actions.ts b/app/invoices/actions.ts
+index f6a9bca..0dfb8f6 100644
+--- a/app/invoices/actions.ts
++++ b/app/invoices/actions.ts
+@@ -1,10 +1,25 @@
+ "use server";
+ 
+-import { redirect } from "next/navigation";
+-import { removeInvoice } from "@/lib/store";
++import { revalidatePath } from "next/cache";
++import { notFound, redirect } from "next/navigation";
++import { getCurrentUserId } from "@/lib/session";
++import { getInvoice, removeInvoice, updateInvoice } from "@/lib/store";
+ 
+ export async function deleteInvoice(formData: FormData) {
+   const id = formData.get("id") as string;
+   removeInvoice(id);
+   redirect("/");
+ }
++
++export async function markInvoicePaid(formData: FormData) {
++  const id = formData.get("id");
++  if (typeof id !== "string") notFound();
++  // Server actions are public endpoints: re-check ownership here, not just on the page.
++  const userId = await getCurrentUserId();
++  const invoice = getInvoice(id);
++  if (!userId || !invoice || invoice.ownerId !== userId) notFound();
++
++  updateInvoice(id, { status: "paid" });
++  revalidatePath(`/invoices/${id}`);
++  revalidatePath("/");
++}

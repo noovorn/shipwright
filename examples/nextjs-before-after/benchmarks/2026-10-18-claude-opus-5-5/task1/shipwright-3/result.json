@@ -1,0 +1,47 @@
+{
+  "task": 1,
+  "title": "Wrong dashboard total (bug fix)",
+  "variant": "shipwright",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 3,
+  "buildExit": 0,
+  "checks": {
+    "fixed": true,
+    "root-cause": true,
+    "sibling": true
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": true,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.3631749000000001,
+    "turns": 10,
+    "durationMs": 86671
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "lib/csv.test.ts",
+    "lib/csv.ts",
+    "lib/money.test.ts",
+    "lib/money.ts",
+    "lib/stats.test.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files | grep -v '^.claude/' | head -50 && cat package.json 2>/dev/null; grep -rn -i \"outstanding\" --exclude-dir=node_modules --exclude-dir=.claude . | head -30",
+    "cd \"<workspace>\" && cat lib/stats.ts lib/stats.test.ts lib/money.ts app/page.tsx lib/store.ts; head -c 1500 data/invoices.json; echo; grep -o '\"amount\": *\"[^\"]*\"' data/invoices.json | sort | uniq -c | sort -rn | head; grep -o '\"amount\": *[^,}]*' data/invoices.json | grep -v '\"amount\": *\"[0-9]*\\.[0-9][0-9]\"' | head -20",
+    "cd \"<workspace>\" && grep -rn \"parseAmount\\|amount\" --include=*.ts --include=*.tsx app lib | grep -v test",
+    "cd \"<workspace>\" && cat lib/csv.ts",
+    "cd \"<workspace>\" && cat > lib/money.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { parseAmount } from \"@/lib/money\";\n\ndescribe(\"parseAmount\", () => {\n  it(\"parses plain amounts\", () => {\n    expect(parseAmount(\"450.00\")).toBe(450);\n  });\n\n  it(\"handles thousands separators and a leading $\", () => {\n    expect(parseAmount(\"2,300.00\")).toBe(2300);\n    expect(parseAmount(\"$1,250,000.00\")).toBe(1250000);\n    expect(parseAmount(\" $1,250.00 \")).toBe(1250);\n  });\n});\nEOF\ncat > lib/csv.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { importCsv } from \"@/lib/csv\";\n\ndescribe(\"importCsv\", () => {\n  it(\"keeps quoted amounts with thousands separators intact\", () => {\n    const [row] = importCsv('customer,amount,dueDate\\nAcme,\"1,200.00\",2026-12-01', \"alice\");\n    expect(row.amount).toBe(\"1200.00\");\n  });\n\n  it(\"rejects non-numeric amounts\", () => {\n    expect(() => importCsv(\"customer,amount,dueDate\\nAcme,abc,2026-12-01\", \"alice\")).toThrow(/invalid amount/);\n  });\n});\nEOF\npython - <<'EOF'\np='lib/stats.test.ts'\ns=open(p).read()\ns=s.replace('''    expect(totalOutstanding([inv(\"100.00\"), inv(\"999.00\", \"paid\")])).toBe(100);\n  });\n''','''    expect(totalOutstanding([inv(\"100.00\"), inv(\"999.00\", \"paid\")])).toBe(100);\n  });\n\n  it(\"sums amounts with thousands separators\", () => {\n    expect(totalOutstanding([inv(\"450.00\"), inv(\"2,300.00\"), inv(\"1,250,000.00\")])).toBe(1252750);\n  });\n''')\nopen(p,'w').write(s)\nEOF\nnpx vitest run 2>&1 | tail -30",
+    "cd \"<workspace>\" && python - <<'EOF'\np='lib/money.ts'\ns=open(p).read()\ns=s.replace('return parseFloat(input.trim().replace(/^\\\\$/, \"\"));','return parseFloat(input.trim().replace(/^\\\\$/, \"\").replace(/,/g, \"\"));')\nopen(p,'w').write(s)\np='lib/csv.ts'\ns=open(p).read()\ns=s.replace('import type { Invoice } from \"@/lib/store\";','import { parseAmount } from \"@/lib/money\";\\nimport type { Invoice } from \"@/lib/store\";')\ns=s.replace('Number.parseFloat(rawAmount.replace(/^\\\\$/, \"\"))','parseAmount(rawAmount)')\nopen(p,'w').write(s)\nEOF\ngit diff lib/money.ts lib/csv.ts; npx vitest run 2>&1 | tail -6; npx tsc --noEmit && echo TSC OK",
+    "cd \"<workspace>\" && git show HEAD:lib/stats.test.ts | file - ; python -c \"\nimport sys\nfor p in ['lib/money.ts','lib/csv.ts','lib/stats.test.ts','lib/money.test.ts','lib/csv.test.ts']:\n    b=open(p,'rb').read().replace(b'\\r\\n',b'\\n').replace(b'\\n',b'\\r\\n'); open(p,'wb').write(b)\n\"; git diff --stat; npx vitest run 2>&1 | tail -4",
+    "cd \"<workspace>\" && git config core.autocrlf; git show HEAD:lib/money.ts | od -c | head -3; python -c \"\nfor p in ['lib/money.ts','lib/csv.ts','lib/stats.test.ts','lib/money.test.ts','lib/csv.test.ts']:\n    b=open(p,'rb').read().replace(b'\\r\\n',b'\\n'); open(p,'wb').write(b)\n\"; git diff --stat",
+    "cd \"<workspace>\" && npx vitest run 2>&1 | tail -5; npx tsc --noEmit && echo TSC OK; git status --short"
+  ],
+  "finalMessage": "I've fixed it. With alice's seed data, the Outstanding total now comes to **$1,252,750.00** instead of $453.00.\n\n**Cause:** amounts are stored as text with commas, like `\"2,300.00\"`. `parseAmount` in `lib/money.ts` used `parseFloat`, which stops reading at the first comma. So `\"2,300.00\"` became 2 and `\"1,250,000.00\"` became 1. Alice's open invoices were added up as 450 + 2 + 1 = $453.\n\n**Fix:** `parseAmount` now removes commas before parsing (`lib/money.ts:3`).\n\n**Same bug in CSV import:** `lib/csv.ts` had its own copy of the broken parsing. An imported amount like `\"1,200.00\"` would have been saved as `\"1.00\"`. It now uses the fixed `parseAmount`. Any invoices already imported from a CSV with commas in the amounts were saved with the wrong value, and this fix doesn't change them. Those records need to be checked and re-imported or corrected.\n\n**Tests:** I added tests for comma-formatted amounts in `lib/money.test.ts`, `lib/csv.test.ts` and `lib/stats.test.ts`. Before the fix they failed and reproduced the $453; now all 8 tests pass and the type check is clean. I didn't open the dashboard in a browser.\n\nNothing is committed yet. Tell me if you want a commit or PR."
+}

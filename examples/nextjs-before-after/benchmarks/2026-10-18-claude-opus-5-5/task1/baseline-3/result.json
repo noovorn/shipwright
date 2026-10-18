@@ -1,0 +1,42 @@
+{
+  "task": 1,
+  "title": "Wrong dashboard total (bug fix)",
+  "variant": "baseline",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 3,
+  "buildExit": 0,
+  "checks": {
+    "fixed": true,
+    "root-cause": true,
+    "sibling": true
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": true,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.27538350000000006,
+    "turns": 10,
+    "durationMs": 49985
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "lib/csv.ts",
+    "lib/money.test.ts",
+    "lib/money.ts",
+    "lib/stats.test.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files && grep -rn -i \"outstanding\" --exclude-dir=node_modules --exclude-dir=.git .",
+    "cd \"<workspace>\" && cat lib/stats.ts lib/money.ts lib/stats.test.ts app/page.tsx lib/store.ts; head -c 1500 data/invoices.json; grep -o '\"amount\": *\"[^\"]*\"' data/invoices.json | sort | uniq -c | sort -rn | head -30",
+    "cd \"<workspace>\" && grep -rn \"parseAmount\\|parseFloat\\|Number(\" app lib; cat lib/csv.ts app/invoices/actions.ts",
+    "cd \"<workspace>\" && sed -i 's|  return parseFloat(input.trim().replace(/^\\\\$/, \"\"));|  return parseFloat(input.trim().replace(/^\\\\$/, \"\").replace(/,/g, \"\"));|' lib/money.ts && sed -i 's|^import type { Invoice } from \"@/lib/store\";|import { parseAmount } from \"@/lib/money\";\\nimport type { Invoice } from \"@/lib/store\";|; s|const amount = Number.parseFloat(rawAmount.replace(/^\\\\$/, \"\"));|const amount = parseAmount(rawAmount);|' lib/csv.ts && cat > lib/money.test.ts <<'EOF'\nimport { describe, expect, it } from \"vitest\";\nimport { parseAmount } from \"@/lib/money\";\n\ndescribe(\"parseAmount\", () => {\n  it(\"parses plain amounts\", () => {\n    expect(parseAmount(\"450.00\")).toBe(450);\n  });\n\n  it(\"parses thousands separators and a leading $\", () => {\n    expect(parseAmount(\"2,300.00\")).toBe(2300);\n    expect(parseAmount(\"$1,250,000.00\")).toBe(1250000);\n  });\n});\nEOF\ncat >> lib/stats.test.ts <<'EOF'\n\ndescribe(\"totalOutstanding with thousands separators\", () => {\n  it(\"sums comma-formatted amounts\", () => {\n    expect(totalOutstanding([inv(\"450.00\"), inv(\"2,300.00\"), inv(\"1,250,000.00\")])).toBe(1252750);\n  });\n});\nEOF\ngit diff lib/money.ts lib/csv.ts; npx vitest run 2>&1 | tail -15",
+    "cd \"<workspace>\" && npx vitest run 2>&1 | tail -6; npx tsc --noEmit 2>&1 | tail -5; git status --short"
+  ],
+  "finalMessage": "I fixed it. Alice's Outstanding total now comes to **$1,252,750.00**: 450.00 + 2,300.00 + 1,250,000.00 across her three open invoices. All 6 tests pass and the type check is clean. I haven't checked it in the running app.\n\n**Cause:** Amounts are stored as text with commas in them (like `\"2,300.00\"`). `parseAmount` in `lib/money.ts` turned that text into a number with `parseFloat`, which stops reading at the first comma. So `\"2,300.00\"` became 2 and `\"1,250,000.00\"` became 1. That's where 450 + 2 + 1 = $453 came from. The function's own comment says it handles `\"$1,250.00\"`, but it didn't.\n\n**Changes:**\n- `lib/money.ts`: `parseAmount` now strips commas before converting the text.\n- `lib/csv.ts`: the CSV importer had the same bug, with one difference: it **saved** the wrong value. An imported `\"1,200.00\"` was stored as `\"1.00\"`. It now uses `parseAmount`, so new imports come in correctly.\n- Tests: a new `lib/money.test.ts` and a case in `lib/stats.test.ts` that cover comma-formatted amounts.\n\nInvoices that were already imported from CSV with comma amounts were saved with the wrong value, and this fix doesn't correct them. In this demo the store lives in memory and resets from the seed data, so nothing lasting was lost here. If real data went through that importer, those invoices would need to be re-imported.\n\nI haven't committed the changes."
+}

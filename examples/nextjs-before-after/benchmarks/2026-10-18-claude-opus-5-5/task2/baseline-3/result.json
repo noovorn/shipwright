@@ -1,0 +1,41 @@
+{
+  "task": 2,
+  "title": "Mark invoice as paid (feature)",
+  "variant": "baseline",
+  "agent": "claude",
+  "model": "claude-opus-5-5",
+  "run": 3,
+  "buildExit": 0,
+  "checks": {
+    "works": true,
+    "authn": true,
+    "authz": true,
+    "revalidate": true,
+    "sibling": false
+  },
+  "process": {
+    "skillLoaded": false,
+    "ownTestsPass": true,
+    "buildPasses": true,
+    "addedTests": false,
+    "ranTests": true,
+    "ranBuild": true
+  },
+  "usage": {
+    "costUsd": 0.2367629,
+    "turns": 5,
+    "durationMs": 34496
+  },
+  "skillsUsed": [],
+  "filesChanged": [
+    "app/invoices/[id]/page.tsx",
+    "app/invoices/actions.ts"
+  ],
+  "commands": [
+    "cd \"<workspace>\" && git ls-files && cat package.json; for f in $(git ls-files app lib 2>/dev/null); do echo \"=== $f\"; cat \"$f\"; done",
+    "cd \"<workspace>\" && cat > app/invoices/actions.ts <<'EOF'\n\"use server\";\n\nimport { revalidatePath } from \"next/cache\";\nimport { notFound, redirect } from \"next/navigation\";\nimport { getCurrentUserId } from \"@/lib/session\";\nimport { getInvoice, removeInvoice, updateInvoice } from \"@/lib/store\";\n\nexport async function deleteInvoice(formData: FormData) {\n  const id = formData.get(\"id\") as string;\n  removeInvoice(id);\n  redirect(\"/\");\n}\n\nexport async function markInvoicePaid(formData: FormData) {\n  const id = formData.get(\"id\");\n  if (typeof id !== \"string\") notFound();\n\n  // Server actions are public endpoints, so re-check ownership here.\n  const userId = await getCurrentUserId();\n  const invoice = getInvoice(id);\n  if (!userId || !invoice || invoice.ownerId !== userId) notFound();\n\n  updateInvoice(id, { status: \"paid\" });\n  revalidatePath(`/invoices/${id}`);\n  revalidatePath(\"/\");\n}\nEOF\npython - <<'EOF'\np=\"app/invoices/[id]/page.tsx\"\ns=open(p).read()\ns=s.replace('import { deleteInvoice } from','import { deleteInvoice, markInvoicePaid } from')\ns=s.replace('''      </dl>\n''','''      </dl>\n      {invoice.status !== \"paid\" && (\n        <form action={markInvoicePaid}>\n          <input type=\"hidden\" name=\"id\" value={invoice.id} />\n          <button type=\"submit\">Mark as paid</button>\n        </form>\n      )}\n''')\nopen(p,\"w\").write(s)\nEOF\ngit diff --stat; npm run typecheck 2>&1 | tail -5; npm test 2>&1 | tail -5",
+    "cd \"<workspace>\" && git show HEAD:\"app/invoices/[id]/page.tsx\" | file - ; file \"app/invoices/[id]/page.tsx\"; git show HEAD:app/invoices/actions.ts | file -",
+    "cd \"<workspace>\" && sed -i 's/\\r$//' \"app/invoices/[id]/page.tsx\" && git diff"
+  ],
+  "finalMessage": "The invoice page now has a \"Mark as paid\" button. The typecheck passes and the 3 existing tests pass, but nothing tests the new action and I didn't run the app to click the button.\n\n- **`app/invoices/actions.ts`**: `markInvoicePaid(formData)` reads `id` from the form and checks that the signed-in user owns that invoice. If so, it sets the status to `\"paid\"` and refreshes the invoice page and the dashboard. Anyone can call a server action directly, not just through the button, so the action checks ownership itself rather than trusting the page. If the user isn't signed in, the invoice doesn't exist, or it belongs to someone else, it returns a 404.\n- **`app/invoices/[id]/page.tsx`**: the button posts the hidden `id` field to that action. It only shows while the invoice isn't paid yet.\n\n**Security issue in existing code:** `deleteInvoice` has no ownership check. Any visitor, even one who isn't signed in, can delete any invoice by posting its id to the action. I left it alone because it's outside this task. The fix is the same ownership check `markInvoicePaid` uses, and I can add it if you'd like."
+}
